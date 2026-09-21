@@ -1,0 +1,33 @@
+/target
+/scripts
+/AGENTS.md
+.cargo/config.toml
+
+# Generated datasets, checkpoints, and recordings.
+/data/
+/ckpts/
+/checkpoints/
+/replays/
+/runs/
+*.sts2pgn
+*.jsonl
+*.onnx
+*.pt
+*.pth
+*.safetensors
+!tests/fixtures/*.onnx
+
+# Local credentials and editor state.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+__pycache__/
+*.py[cod]

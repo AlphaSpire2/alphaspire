@@ -1,0 +1,16 @@
+{
+  "scope": "combat",
+  "policy_encoding_version": 9,
+  "observation_version": 9,
+  "belief_model_version": "combat-v0",
+  "vocabulary_hash": "sha256:ade8cb18c4507b4e7ffe302a498fda8ca076cdf7d2bb5afd6d138a71a22eb97a",
+  "vocabulary_size": 1799,
+  "value_semantics": "combat-strength-v3",
+  "samples_file": "a v8 smoke batch: 12 heuristic-macro runs at 24 iterations; the characters field is stripped so the fixture keeps standing in for a checkpoint written before provenance carried it",
+  "samples": 1110,
+  "epochs": 2,
+  "seed": 1,
+  "embed": 4,
+  "hidden": 8,
+  "trainer_revision": "1eeda403f16a2898f30d73ce6c1c8b1adbcd7d16"
+}

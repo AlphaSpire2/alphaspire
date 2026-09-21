@@ -1,0 +1,29 @@
+# The forced-win walk's default price list: what a skipped fight costs.
+# See `alphaspire run --help` under --force-wins; every knob here exists
+# to be tweaked, and the parsed config is echoed into the bank's manifest.
+
+# Multiplier on the drawn loss, indexed by act (act 1 first); an act past
+# the end keeps the last entry.
+act_scale = [1.0, 1.15, 1.3]
+
+# The injected loss never leaves the player below this.
+min_hp = 1
+
+# Fractions of max HP, drawn uniformly in [min, max], scaled by act.
+[hp_loss.hallway]
+min = 0.00
+max = 0.15
+
+[hp_loss.elite]
+min = 0.10
+max = 0.35
+
+[hp_loss.boss]
+min = 0.15
+max = 0.50
+
+# Chance a skipped fight consumes one held potion, per tier.
+[potion_use]
+hallway = 0.05
+elite = 0.35
+boss = 0.60

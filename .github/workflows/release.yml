@@ -1,0 +1,246 @@
+name: Release binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag and draft release
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86_64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            extension: .exe
+            rustflags: -C target-feature=+crt-static
+          - platform: linux-x86_64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            extension: ''
+            rustflags: ''
+          - platform: macos-aarch64
+            os: macos-14
+            target: aarch64-apple-darwin
+            extension: ''
+            rustflags: ''
+          - platform: macos-x86_64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+            extension: ''
+            rustflags: ''
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: source
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_REPO: ${{ github.repository }}
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
+      CARGO_INCREMENTAL: '0'
+      CARGO_BUILD_JOBS: '2'
+      RUSTFLAGS: ${{ matrix.rustflags }}
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.tag }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Validate version and read the pinned simulator revision
+        id: simulator
+        run: |
+          python - <<'PY'
+          import os, re, tomllib
+          from pathlib import Path
+          manifest = tomllib.loads(Path('Cargo.toml').read_text())
+          assert os.environ['RELEASE_TAG'] == 'v' + manifest['package']['version']
+          revisions = {dep['rev'] for name, dep in manifest['dependencies'].items() if name.startswith('sts2-')}
+          assert len(revisions) == 1
+          revision = revisions.pop()
+          assert re.fullmatch('[0-9a-f]{40}', revision)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'revision={revision}\n')
+          PY
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: AlphaSpire2/sts2sim
+          ref: ${{ steps.simulator.outputs.revision }}
+          ssh-key: ${{ secrets.STS2SIM_SSH_KEY }}
+          path: simulator
+          persist-credentials: false
+      - name: Resolve the declared Git source from the authenticated checkout
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          url = (Path(os.environ['GITHUB_WORKSPACE']) / 'simulator').resolve().as_uri()
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('GIT_CONFIG_COUNT=1\n')
+              output.write(f'GIT_CONFIG_KEY_0=url.{url}.insteadOf\n')
+              output.write('GIT_CONFIG_VALUE_0=https://github.com/AlphaSpire2/sts2sim\n')
+          PY
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: 1.88.0
+          targets: ${{ matrix.target }}
+      - name: Build native executable
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          cargo build --locked --profile dist --target "$BUILD_TARGET"
+          cargo metadata --locked --format-version 1 > ../metadata.json
+      - name: Prepare binary archive contents
+        shell: pwsh
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          BUILD_PLATFORM: ${{ matrix.platform }}
+          BINARY_EXTENSION: ${{ matrix.extension }}
+        run: |
+          $name = "alphaspire-$env:RELEASE_TAG-$env:BUILD_PLATFORM"
+          $package = New-Item -ItemType Directory -Path "../packages/$name"
+          Copy-Item "target/$env:BUILD_TARGET/dist/alphaspire$env:BINARY_EXTENSION" $package
+          Copy-Item LICENSE $package
+          @"
+          # Alphaspire $env:RELEASE_TAG
+
+          Extract the archive and run ./alphaspire --help (Windows: .\alphaspire.exe --help).
+          No Rust, Python, game installation, or separate simulator installation is required.
+          To run without models: ./alphaspire run --runs 1 --policy heuristic --out scripts
+
+          Models are separate ZIP downloads. Keep each checkpoint's JSON and ONNX files
+          together and pass its path without an extension. Select a model compatible with
+          your character and command; see the model bundle's instructions and run --help.
+          Alphaspire simulates runs headlessly; it does not launch or control the game.
+
+          Windows requires x64. Linux requires x64 and glibc 2.35 or newer.
+          macOS requires 11 or newer; choose the Apple Silicon or Intel archive.
+          macOS binaries are not Developer ID signed or notarized.
+          Documentation: https://github.com/AlphaSpire2/alphaspire/blob/$env:RELEASE_TAG/README.md
+          See LICENSE, THIRD_PARTY_LICENSES.txt, and BUILD.json. SHA256SUMS.txt on the
+          release contains the binary archive checksums.
+          "@ | Set-Content -Encoding utf8 "$package/README.md"
+          $revision = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read source revision' }
+          @{
+            version = $env:RELEASE_TAG.Substring(1)
+            source_revision = $revision
+            target = $env:BUILD_TARGET
+          } | ConvertTo-Json | Set-Content -Encoding utf8 "$package/BUILD.json"
+      - name: Collect dependency license notices
+        env:
+          BUILD_PLATFORM: ${{ matrix.platform }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          package_dir = Path('../packages') / f"alphaspire-{os.environ['RELEASE_TAG']}-{os.environ['BUILD_PLATFORM']}"
+          metadata = json.loads(Path('../metadata.json').read_text(encoding='utf-8-sig'))
+          notices = []
+          for package in sorted(metadata['packages'], key=lambda p: (p['name'], p['version'])):
+              heading = f"{package['name']} {package['version']} ({package.get('license') or 'see notice'})"
+              directory = Path(package['manifest_path']).parent
+              candidates = []
+              if package.get('license_file'):
+                  candidates.append(directory / package['license_file'])
+              parents = [directory] if (package.get('source') or '').startswith('registry+') else [directory, *list(directory.parents)[:3]]
+              for parent in parents:
+                  candidates += sorted(p for p in parent.iterdir() if p.is_file()
+                                       and p.name.upper().startswith(('LICENSE', 'LICENCE', 'COPYING', 'NOTICE')))
+                  if candidates or (parent / '.git').exists():
+                      break
+              if not candidates:
+                  override = Path('LICENSES') / f"{package['name']}-{package['version']}.txt"
+                  if not override.is_file():
+                      raise ValueError(f'Missing dependency license text: {heading}')
+                  candidates.append(override)
+              notices.append(heading + '\n' + '=' * len(heading))
+              for path in dict.fromkeys(candidates):
+                  notices.append(path.name + '\n' + path.read_text(encoding='utf-8', errors='replace'))
+          (package_dir / 'THIRD_PARTY_LICENSES.txt').write_text('\n\n'.join(notices) + '\n', encoding='utf-8')
+          PY
+      - name: Smoke-test and archive the executable
+        shell: pwsh
+        env:
+          BUILD_PLATFORM: ${{ matrix.platform }}
+          BINARY_EXTENSION: ${{ matrix.extension }}
+        run: |
+          $name = "alphaspire-$env:RELEASE_TAG-$env:BUILD_PLATFORM"
+          $package = (Resolve-Path "../packages/$name").Path
+          $executable = Join-Path $package "alphaspire$env:BINARY_EXTENSION"
+          if (-not $IsWindows) {
+            chmod +x $executable
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot set executable permissions' }
+          }
+          $version = & $executable --version
+          if ($LASTEXITCODE -ne 0 -or $version -ne "alphaspire $($env:RELEASE_TAG.Substring(1))") {
+            throw "Unexpected executable version: $version"
+          }
+          $scripts = Join-Path $env:RUNNER_TEMP "alphaspire-smoke-$([guid]::NewGuid())"
+          Push-Location $package
+          try {
+            & $executable run --runs 1 --seed N3Z9EE2CXB --character ironclad --ascension 5 --policy heuristic --iterations 1 --rollout-depth 1 --out $scripts
+            if ($LASTEXITCODE -ne 0) { throw 'Executable smoke check failed' }
+            if (-not (Get-ChildItem -LiteralPath $scripts -Filter '*.sts2pgn')) {
+              throw 'Executable did not produce a run script'
+            }
+          } finally { Pop-Location }
+          if ($IsWindows) {
+            Compress-Archive -LiteralPath $package -DestinationPath "../packages/$name.zip"
+          } else {
+            tar -czf "../packages/$name.tar.gz" -C ../packages $name
+            if ($LASTEXITCODE -ne 0) { throw 'Archive creation failed' }
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: |
+            packages/*.zip
+            packages/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  upload:
+    name: Attach verified archives to draft release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_REPO: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-*
+          path: packages
+          merge-multiple: true
+      - name: Check all targets and upload with checksums
+        shell: bash
+        run: |
+          test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true
+          cd packages
+          test -f "alphaspire-$RELEASE_TAG-windows-x86_64.zip"
+          test -f "alphaspire-$RELEASE_TAG-linux-x86_64.tar.gz"
+          test -f "alphaspire-$RELEASE_TAG-macos-aarch64.tar.gz"
+          test -f "alphaspire-$RELEASE_TAG-macos-x86_64.tar.gz"
+          sha256sum *.zip *.tar.gz > SHA256SUMS.txt
+          gh release upload "$RELEASE_TAG" *.zip *.tar.gz SHA256SUMS.txt --clobber

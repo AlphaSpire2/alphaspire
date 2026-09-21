@@ -1,0 +1,10 @@
+# Optional local simulator override. Copy to .cargo/config.toml and adjust
+# the paths to your checkout. Paths are relative to the repository root;
+# the default build uses the Git dependency without this file.
+
+[patch."https://github.com/AlphaSpire2/sts2sim"]
+sts2-core = { path = "../sts2sim/crates/sts2-core" }
+sts2-engine = { path = "../sts2sim/crates/sts2-engine" }
+sts2-content = { path = "../sts2sim/crates/sts2-content" }
+sts2-rng = { path = "../sts2sim/crates/sts2-rng" }
+sts2-replay = { path = "../sts2sim/crates/sts2-replay" }
