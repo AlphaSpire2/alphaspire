@@ -6,7 +6,7 @@
 use alphaspire::env::{Determinizer, NodeKey};
 use alphaspire::objective::CombatStrength;
 use alphaspire::policy::UniformRandom;
-use alphaspire::search::{Mcts, SearchConfig, Uct};
+use alphaspire::search::{Gumbel, Mcts, SearchConfig, Uct, action_class};
 use sts2_engine::{Action, CardFingerprint, EngineError, PileName, ScenarioBuilder, Simulator};
 use sts2_rng::MegaRandom;
 
@@ -99,6 +99,45 @@ impl Determinizer for TwoWorlds {
     fn node_key(&self, simulator: &Simulator) -> Result<NodeKey, EngineError> {
         Ok(NodeKey::Observation(simulator.observation_key()?))
     }
+}
+
+#[test]
+fn a_gumbel_pin_matches_the_class_of_another_worlds_card_handle() {
+    let even = fight();
+    let odd = reversed(&even);
+    let pinned = odd
+        .legal_actions()
+        .iter()
+        .find(|action| {
+            matches!(action, Action::PlayCard { card, .. }
+            if card.fingerprint.model_id == id("CARD.BASH"))
+        })
+        .unwrap()
+        .clone();
+    assert!(!even.legal_actions().contains(&pinned));
+    let mut determinizer = TwoWorlds { even, odd };
+    let mut mcts = Mcts::new(
+        SearchConfig {
+            iterations: 8,
+            rollout_depth: 2,
+            temperature: 0.0,
+        },
+        Gumbel {
+            considered: 1,
+            ..Gumbel::default()
+        },
+    );
+    let (chosen, _) = mcts.decide_pinned(
+        &mut determinizer,
+        &CombatStrength::default(),
+        &mut UniformRandom,
+        None,
+        std::slice::from_ref(&pinned),
+        &mut MegaRandom::new(7),
+    );
+    assert_eq!(action_class(&chosen), action_class(&pinned));
+    assert!(determinizer.even.legal_actions().contains(&chosen));
+    assert_eq!(mcts.degradations().dead_ends, 0);
 }
 
 #[test]

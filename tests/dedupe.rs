@@ -4,7 +4,7 @@
 //! a combat-scoped objective from drinking the belt for free.
 
 use alphaspire::objective::{CombatStrength, Objective};
-use alphaspire::search::canonical_actions;
+use alphaspire::search::{action_class, canonical_actions};
 use sts2_engine::{Action, CardFingerprint, PileName, ScenarioBuilder, Simulator};
 
 const SEED: &str = "NLD6VZXP94";
@@ -119,6 +119,96 @@ fn distinct_targets_and_prints_stay_distinct() {
         .filter(|action| matches!(action, Action::PlayCard { .. }))
         .count();
     assert_eq!(canonical_plays, 2, "one class per target");
+}
+
+#[test]
+fn combat_class_comparisons_preserve_the_json_equivalence_and_first_representative() {
+    let simulator = fight(&[(10, "CARD.STRIKE_IRONCLAD"), (11, "CARD.STRIKE_IRONCLAD")]);
+    let original = simulator.legal_actions()[0].clone();
+    assert!(matches!(original, Action::PlayCard { .. }));
+    let base = serde_json::to_value(&original).unwrap();
+    let mut actions = simulator.legal_actions().to_vec();
+    // Every gameplay field remains part of a play's identity, while copy
+    // ids and positions do not. Saved JSON also exercises the legacy
+    // scrubber's recursion and the distinction between 0.0 and -0.0.
+    for (path, values) in [
+        ("/card/card_id", vec![serde_json::json!(500)]),
+        ("/card/index", vec![serde_json::json!(9)]),
+        ("/card/face/damage_bonus", vec![serde_json::json!(7)]),
+        ("/card/face/cost_this_turn", vec![serde_json::json!(-1)]),
+        (
+            "/card/fingerprint/upgrade_level",
+            vec![serde_json::json!(1)],
+        ),
+        (
+            "/card/fingerprint/floor_added_to_deck",
+            vec![serde_json::json!(5)],
+        ),
+        (
+            "/card/fingerprint/bing_bong_skip_once",
+            vec![serde_json::json!(true)],
+        ),
+        ("/target/combat_id", vec![serde_json::json!(2)]),
+        ("/target", vec![serde_json::Value::Null]),
+        (
+            "/card/fingerprint/properties",
+            vec![
+                serde_json::json!({"bonus": 7}),
+                serde_json::json!({"bonus": 8}),
+                serde_json::json!({"bonus": 0.0}),
+                serde_json::json!({"bonus": -0.0}),
+                serde_json::json!({"cards": [1, 2]}),
+                serde_json::json!({"cards": [2, 1]}),
+                serde_json::json!({"card_id": 1, "fingerprint": "saved", "index": 0}),
+                serde_json::json!({"card_id": 2, "fingerprint": "saved", "index": 9}),
+                serde_json::json!({"fingerprint": "saved"}),
+            ],
+        ),
+        (
+            "/card/fingerprint/enchantment",
+            vec![
+                serde_json::json!({"model_id":"ENCHANTMENT.MOMENTUM", "amount":1, "properties":{}}),
+                serde_json::json!({"model_id":"ENCHANTMENT.MOMENTUM", "amount":2, "properties":{}}),
+                serde_json::json!({"model_id":"ENCHANTMENT.MOMENTUM", "amount":1, "properties":{"cards":[1,2]}}),
+                serde_json::json!({"model_id":"ENCHANTMENT.MOMENTUM", "amount":1, "properties":{"cards":[2,1]}}),
+            ],
+        ),
+    ] {
+        for value in values {
+            let mut action = base.clone();
+            *action.pointer_mut(path).unwrap() = value;
+            actions.push(serde_json::from_value(action).unwrap());
+        }
+    }
+    actions.extend([Action::EndTurn { turn: 1 }, Action::EndTurn { turn: 2 }]);
+    let Action::PlayCard { card, .. } = original else {
+        unreachable!()
+    };
+    let mut other = card.clone();
+    other.fingerprint.upgrade_level = 1;
+    for cards in [vec![card.clone(), other.clone()], vec![other, card]] {
+        actions.push(Action::ChooseCards {
+            choice_id: 1.into(),
+            cards,
+        });
+    }
+    for left in &actions {
+        for right in &actions {
+            let expected = if action_class(left) == action_class(right) {
+                vec![left.clone()]
+            } else {
+                vec![left.clone(), right.clone()]
+            };
+            assert_eq!(canonical_actions(&[left.clone(), right.clone()]), expected);
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    let expected: Vec<_> = actions
+        .iter()
+        .filter(|action| seen.insert(action_class(action)))
+        .cloned()
+        .collect();
+    assert_eq!(canonical_actions(&actions), expected);
 }
 
 #[test]

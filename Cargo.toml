@@ -19,11 +19,11 @@ toml = "0.8"
 tract-onnx = "0.22.4"
 # The simulator. A checkout that develops the two together patches this
 # source with a sibling checkout in its own `.cargo/config.toml`.
-sts2-core = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "f2d18762611a73b3c4b02c43ea9612c1e2087b1e" }
-sts2-engine = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "f2d18762611a73b3c4b02c43ea9612c1e2087b1e" }
-sts2-content = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "f2d18762611a73b3c4b02c43ea9612c1e2087b1e" }
-sts2-rng = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "f2d18762611a73b3c4b02c43ea9612c1e2087b1e" }
-sts2-replay = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "f2d18762611a73b3c4b02c43ea9612c1e2087b1e" }
+sts2-core = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d" }
+sts2-engine = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d" }
+sts2-content = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d" }
+sts2-rng = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d" }
+sts2-replay = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d" }
 
 # Strip symbols in distribution builds.
 [profile.dist]

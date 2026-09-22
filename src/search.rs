@@ -414,6 +414,7 @@ fn gumbel_variate(rng: &mut MegaRandom) -> f64 {
     -(-uniform.ln()).ln()
 }
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use sts2_engine::{Action, Simulator};
@@ -612,6 +613,68 @@ fn scrub_copy_identity(value: &mut serde_json::Value) {
     }
 }
 
+/// The common combat classes borrow their gameplay fields directly. Other
+/// actions retain the JSON class, including its unordered multi-card picks.
+/// A node caches only those fallback strings; its representative already
+/// owns everything the typed classes need.
+#[derive(Debug, Eq, PartialEq)]
+enum ActionClass<'a> {
+    PlayCard {
+        fingerprint: &'a sts2_engine::CardFingerprint,
+        face: &'a sts2_engine::CardFace,
+        target: &'a Option<sts2_engine::TargetHandle>,
+    },
+    EndTurn(u32),
+    Json(Cow<'a, str>),
+}
+
+impl<'a> ActionClass<'a> {
+    fn of(action: &'a Action, cached: Option<&'a str>) -> Self {
+        match action {
+            Action::PlayCard { card, target } if typed_card_properties(&card.fingerprint) => {
+                let sts2_engine::CardHandle {
+                    index: _,
+                    card_id: _,
+                    fingerprint,
+                    face,
+                } = card;
+                Self::PlayCard {
+                    fingerprint,
+                    face,
+                    target,
+                }
+            }
+            Action::EndTurn { turn } => Self::EndTurn(*turn),
+            _ => Self::Json(cached.map_or_else(|| Cow::Owned(action_class(action)), Cow::Borrowed)),
+        }
+    }
+}
+
+/// The legacy scrubber also walks arbitrary saved JSON properties. Keep
+/// that path for nested values, and for floats whose textual identity can
+/// differ despite numeric equality (such as negative zero).
+fn typed_card_properties(card: &sts2_engine::CardFingerprint) -> bool {
+    let simple = |properties: &std::collections::BTreeMap<String, serde_json::Value>| {
+        // Keep the scrubbed counterpart on this path too: removing a
+        // nested handle's card_id/index leaves its fingerprint behind.
+        !properties.contains_key("fingerprint")
+            && properties.values().all(|value| {
+                matches!(
+                    value,
+                    serde_json::Value::Null
+                        | serde_json::Value::Bool(_)
+                        | serde_json::Value::String(_)
+                ) || value.is_i64()
+                    || value.is_u64()
+            })
+    };
+    simple(&card.properties)
+        && card
+            .enchantment
+            .as_ref()
+            .is_none_or(|enchantment| simple(&enchantment.properties))
+}
+
 /// One representative per gameplay class, first occurrence kept, order
 /// preserved: what the search branches over instead of the raw legal list.
 /// Which copy the representative names is deterministic, so an emitted
@@ -621,19 +684,32 @@ pub fn canonical_actions(legal: &[Action]) -> Vec<Action> {
     canonical_actions_with_classes(legal).0
 }
 
-/// [`canonical_actions`] with the class each representative stands for,
-/// aligned: computed once here so a node can match a world's offers by
-/// class without serializing its own list again.
-fn canonical_actions_with_classes(legal: &[Action]) -> (Vec<Action>, Vec<String>) {
+/// [`canonical_actions`] with cached JSON for fallback classes, aligned
+/// with the representatives. Typed classes need no additional owned data.
+fn canonical_actions_with_classes(legal: &[Action]) -> (Vec<Action>, Vec<Option<String>>) {
     let mut seen = HashSet::new();
+    let mut combat = Vec::new();
     let mut actions = Vec::new();
     let mut classes = Vec::new();
     for action in legal {
-        let class = action_class(action);
-        if seen.insert(class.clone()) {
-            actions.push(action.clone());
-            classes.push(class);
-        }
+        let cached = match ActionClass::of(action, None) {
+            ActionClass::Json(class) => {
+                let class = class.into_owned();
+                if !seen.insert(class.clone()) {
+                    continue;
+                }
+                Some(class)
+            }
+            class => {
+                if combat.contains(&class) {
+                    continue;
+                }
+                combat.push(class);
+                None
+            }
+        };
+        actions.push(action.clone());
+        classes.push(cached);
     }
     (actions, classes)
 }
@@ -656,8 +732,9 @@ struct SearchNode {
     edges: Vec<SearchEdge>,
     /// The class representatives this decision offers, in offer order.
     actions: Vec<Action>,
-    /// The class of each representative, aligned with `actions`.
-    classes: Vec<String>,
+    /// Cached JSON for fallback classes, aligned with `actions`. Common
+    /// combat classes borrow the representative's fields instead.
+    classes: Vec<Option<String>>,
     /// A prior per action, aligned with `actions`: the checkpoint's pricing
     /// where a net guides the search, uniform where none does.
     priors: Vec<f64>,
@@ -680,8 +757,8 @@ impl SearchNode {
     /// `actions`: the offer equal to the representative where the world
     /// names the same copy, the offer of the same class where it names
     /// another, and nothing where the world does not offer the class. The
-    /// classes are serialized only where equality left something unmatched
-    /// and the world holds an offer the node's list does not — the common
+    /// fallback classes are serialized only where equality left something
+    /// unmatched and the world holds an offer the node's list does not — the common
     /// case, one world naming the copies the node was built from, pays a
     /// comparison per action and nothing more.
     fn world_actions<'a>(&self, legal: &'a [Action]) -> Vec<Option<&'a Action>> {
@@ -693,12 +770,17 @@ impl SearchNode {
         if matched.iter().any(Option::is_none)
             && legal.iter().any(|offered| !self.actions.contains(offered))
         {
-            let classes: Vec<String> = legal.iter().map(action_class).collect();
+            let classes: Vec<_> = legal
+                .iter()
+                .map(|action| ActionClass::of(action, None))
+                .collect();
             for (index, slot) in matched.iter_mut().enumerate() {
                 if slot.is_none() {
+                    let class =
+                        ActionClass::of(&self.actions[index], self.classes[index].as_deref());
                     *slot = classes
                         .iter()
-                        .position(|class| *class == self.classes[index])
+                        .position(|offered| *offered == class)
                         .map(|position| &legal[position]);
                 }
             }
@@ -1337,12 +1419,17 @@ impl<S: Selection> Mcts<S> {
                 net,
                 &mut spent.degradations,
             );
-            let classes: Vec<String> = pinned.iter().map(action_class).collect();
+            let classes: Vec<_> = pinned
+                .iter()
+                .map(|action| ActionClass::of(action, None))
+                .collect();
             let pins: Vec<usize> = node
                 .actions
                 .iter()
                 .enumerate()
-                .filter(|(_, action)| classes.contains(&action_class(action)))
+                .filter(|(index, action)| {
+                    classes.contains(&ActionClass::of(action, node.classes[*index].as_deref()))
+                })
                 .map(|(index, _)| index)
                 .collect();
             GumbelPlan::new(schedule, &node.priors, self.config.iterations, &pins, rng)
