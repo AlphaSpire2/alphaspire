@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use sts2_engine::{GameState, MapPointType, RunMode, RunResult, Simulator};
 
-use crate::analyze::{AnalyzeError, check_compatibility, recorded_run};
+use crate::analyze::{AnalyzeError, recorded_run};
 
 pub const TRACE_SUMMARY_FORMAT: u32 = 1;
 
@@ -66,6 +66,7 @@ pub struct TraceSummary {
     pub floor_reached: u32,
     pub act_reached: usize,
     pub verified: bool,
+    pub verification: sts2_replay::ReplayVerification,
     pub hp_curve: Vec<HpPoint>,
     pub acts: Vec<ActSummary>,
 }
@@ -82,7 +83,7 @@ fn open_trace(path: &Path) -> Result<sts2_replay::Parser<impl std::io::BufRead>,
 /// Reads enough of a trace to reproduce its starting world exactly.
 pub fn run_spec(path: &Path) -> Result<RunSpec, AnalyzeError> {
     let mut parser = open_trace(path)?;
-    check_compatibility(&parser)
+    sts2_replay::validate_compatibility(&parser)
         .map_err(|error| AnalyzeError::Trace(format!("{}: {error}", path.display())))?;
     let seed = parser
         .header("Seed")
@@ -126,9 +127,13 @@ pub fn run_spec(path: &Path) -> Result<RunSpec, AnalyzeError> {
 }
 
 /// Replays a trace once and extracts run-level facts without loading a net.
+#[allow(
+    clippy::too_many_lines,
+    reason = "streaming replay and its summary are assembled in one pass"
+)]
 pub fn summarize_trace(path: &Path) -> Result<TraceSummary, AnalyzeError> {
     let mut parser = open_trace(path)?;
-    check_compatibility(&parser)
+    let profile = sts2_replay::validate_compatibility(&parser)
         .map_err(|error| AnalyzeError::Trace(format!("{}: {error}", path.display())))?;
     let header = |key: &str| parser.header(key).map(str::to_owned);
     let seed = header("Seed").ok_or_else(|| AnalyzeError::Trace("no Seed header".into()))?;
@@ -136,7 +141,6 @@ pub fn summarize_trace(path: &Path) -> Result<TraceSummary, AnalyzeError> {
         .and_then(|text| text.parse().ok())
         .ok_or_else(|| AnalyzeError::Trace("the Ascension header is not a level".into()))?;
     let run_mode = mode(parser.header("Mode"));
-    let is_recording = parser.header("RecorderVersion").is_some();
     let header_result = header("Result");
 
     let mut adapter: Option<sts2_replay::ReplayAdapter> = None;
@@ -161,12 +165,7 @@ pub fn summarize_trace(path: &Path) -> Result<TraceSummary, AnalyzeError> {
             let (simulator, played_as) = recorded_run(&seed, ascension, run_mode, &record)?;
             character = played_as;
             observe(&simulator, &mut curve, &mut act_resources);
-            let driver = sts2_replay::ReplayAdapter::new(simulator);
-            adapter = Some(if is_recording {
-                driver.verifying_observations()
-            } else {
-                driver
-            });
+            adapter = Some(sts2_replay::ReplayAdapter::for_profile(simulator, profile));
         }
         let driver = adapter.as_mut().expect("the adapter was just opened");
         match driver.accept(&record) {
@@ -188,6 +187,9 @@ pub fn summarize_trace(path: &Path) -> Result<TraceSummary, AnalyzeError> {
             }
         }
     }
+    profile
+        .validate_terminal(terminal_token.as_deref())
+        .map_err(|error| AnalyzeError::Trace(error.to_string()))?;
     let Some(mut driver) = adapter else {
         return Err(AnalyzeError::Trace(format!(
             "{}: carries no records to replay",
@@ -213,17 +215,27 @@ pub fn summarize_trace(path: &Path) -> Result<TraceSummary, AnalyzeError> {
             _ => "unfinished",
         },
     };
+    let simulated_terminal = state
+        .terminal
+        .map(|result| format!("{result:?}").to_uppercase());
+    let verification = profile.assess(
+        driver.compared_observations(),
+        None,
+        terminal_token.as_deref().or(header_result.as_deref()),
+        simulated_terminal.as_deref(),
+    );
     Ok(TraceSummary {
         trace_summary_format: TRACE_SUMMARY_FORMAT,
         path: path.to_path_buf(),
-        source: if is_recording { "recording" } else { "script" },
+        source: profile.as_str(),
         seed,
         character,
         ascension,
         result,
         floor_reached: run.floor,
         act_reached: run.current_act + 1,
-        verified: is_recording,
+        verified: verification.verified(),
+        verification,
         hp_curve: curve.into_values().collect(),
         acts: act_resources.into_values().collect(),
     })

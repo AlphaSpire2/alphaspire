@@ -129,6 +129,14 @@ fn a_script_walks_to_its_end_and_every_decision_is_a_line() {
         !summary.coverage.verified,
         "a script carries no observations"
     );
+    let verification = summary.coverage.verification.as_ref().unwrap();
+    assert_eq!(verification.profile, sts2_replay::TraceProfile::Script);
+    assert_eq!(
+        verification.outcome,
+        sts2_replay::ReplayOutcome::ActionsAccepted
+    );
+    assert_eq!(verification.compared_observations, 0);
+    assert!(verification.warning.is_some());
     assert_eq!(summary.coverage.decisions, analysis.lines.len());
     assert!(
         summary.coverage.applied >= analysis.lines.len(),
@@ -351,7 +359,12 @@ fn the_macro_lane_prices_plans_and_charges_the_reward() {
 /// from its start again. It stops at the fight's end because a reload
 /// restarts the reward-set ids the script's later records name.
 fn through_a_fight(trace: &Path, reload: bool) -> PathBuf {
+    // Resumes belong to recordings, not action scripts. This synthetic trace
+    // exercises save semantics without claiming observation coverage.
     let script = std::fs::read_to_string(trace).unwrap();
+    let script = script.lines().filter(|line| !line.starts_with("[Producer "))
+        .collect::<Vec<_>>().join("\n")
+        .replace("[Profile \"script\"]", "[Profile \"recording\"]\n[RecorderVersion \"test\"]\n[RunId \"synthetic\"]\n[Mods \"[]\"]\n[Result \"*\"]");
     let is_record = |line: &&str| {
         line.split_once(' ')
             .is_some_and(|(head, _)| head.parse::<u64>().is_ok())

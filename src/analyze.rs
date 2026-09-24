@@ -428,6 +428,8 @@ pub struct Coverage {
     /// False for a script, which carries none.
     pub verified: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub verification: Option<sts2_replay::ReplayVerification>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub divergence: Option<Stop>,
     /// Reloads the recording walked through, and the applied actions they
     /// rewound: played between the last save and the quit, gone from the
@@ -642,7 +644,7 @@ pub fn analyze_trace(
         .map_err(|error| AnalyzeError::Io(path.to_path_buf(), error))?;
     let mut parser = sts2_replay::Parser::new(input)
         .map_err(|error| AnalyzeError::Trace(format!("{}: {error}", path.display())))?;
-    check_compatibility(&parser)
+    let profile = sts2_replay::validate_compatibility(&parser)
         .map_err(|error| AnalyzeError::Trace(format!("{}: {error}", path.display())))?;
     let header = |key: &str| parser.header(key).map(str::to_owned);
     let seed = header("Seed").ok_or_else(|| AnalyzeError::Trace("no Seed header".into()))?;
@@ -664,6 +666,7 @@ pub fn analyze_trace(
     let mut character = String::new();
     let mut pre: Option<Simulator> = None;
     let mut terminal_token: Option<String> = None;
+    let mut failure_code = None;
     for event in &mut parser {
         let event = event.map_err(|error| AnalyzeError::Trace(error.to_string()))?;
         // Consume through EOF to verify the gzip trailer even after a terminal.
@@ -682,12 +685,7 @@ pub fn analyze_trace(
             let (simulator, played_as) = recorded_run(&seed, ascension, mode, &record)?;
             character = played_as;
             walk.open(&simulator);
-            let driver = sts2_replay::ReplayAdapter::new(simulator);
-            adapter = Some(if recorder_version.is_some() {
-                driver.verifying_observations()
-            } else {
-                driver
-            });
+            adapter = Some(sts2_replay::ReplayAdapter::for_profile(simulator, profile));
         }
         let driver = adapter.as_mut().expect("the adapter was just opened");
         let role = sts2_replay::record_role(&record.kind);
@@ -720,6 +718,7 @@ pub fn analyze_trace(
             }
             Ok(sts2_replay::AdapterOutcome::Ignored(_)) => {}
             Err(error) => {
+                failure_code = Some(error.code);
                 walk.coverage.divergence = Some(stop_from(&error, driver.simulator()));
                 break;
             }
@@ -734,7 +733,13 @@ pub fn analyze_trace(
     if walk.coverage.divergence.is_none()
         && let Err(error) = driver.verify_pending_observation()
     {
+        failure_code = Some(error.code);
         walk.coverage.divergence = Some(stop_from(&error, driver.simulator()));
+    }
+    if failure_code.is_none() {
+        profile
+            .validate_terminal(terminal_token.as_deref())
+            .map_err(|error| AnalyzeError::Trace(error.to_string()))?;
     }
     let recorded_result = terminal_token.unwrap_or(recorded_result);
     walk.finish(driver.simulator());
@@ -746,11 +751,18 @@ pub fn analyze_trace(
 
     let final_state = driver.simulator().state();
     let mut coverage = walk.coverage;
-    coverage.verified = recorder_version.is_some() && coverage.divergence.is_none();
     coverage.recorded_result = recorded_result;
     coverage.simulated_result = final_state
         .terminal
         .map(|result| format!("{result:?}").to_uppercase());
+    let verification = profile.assess(
+        driver.compared_observations(),
+        failure_code,
+        Some(&coverage.recorded_result),
+        coverage.simulated_result.as_deref(),
+    );
+    coverage.verified = verification.verified();
+    coverage.verification = Some(verification);
     coverage.decisions = walk.lines.len();
     let run = final_state.run.as_ref();
     let summary = Summary {
@@ -812,41 +824,6 @@ pub fn analyze_trace(
         summary,
         lines: walk.lines,
     })
-}
-
-/// A recording is held to the full compatibility contract. A script carries
-/// no recorder, no run id and no mod list, so it is held to the build
-/// identity and the run headers it does carry.
-pub(crate) fn check_compatibility<R: std::io::BufRead>(
-    parser: &sts2_replay::Parser<R>,
-) -> Result<(), String> {
-    if parser.header("RecorderVersion").is_some() {
-        return sts2_replay::validate_compatibility(parser).map_err(|error| error.to_string());
-    }
-    if parser.header("Producer").is_none() {
-        return Err("neither a recording (RecorderVersion) nor a script (Producer)".to_owned());
-    }
-    let manifest = sts2_core::CompatibilityManifest::pinned()
-        .map_err(|error| format!("compatibility manifest: {error}"))?;
-    for (key, expected) in [
-        ("Format", "STS2PGN".to_owned()),
-        ("FormatVersion", "1".to_owned()),
-        ("GameVersion", manifest.game.version.clone()),
-        ("GameCommit", manifest.game.commit.clone()),
-        ("ModelIdHash", manifest.game.model_id_hash.to_string()),
-    ] {
-        match parser.header(key) {
-            Some(found) if found == expected => {}
-            Some(found) => return Err(format!("{key} is {found}, this build is {expected}")),
-            None => return Err(format!("missing required header {key}")),
-        }
-    }
-    for key in ["Seed", "Ascension", "Players", "Mode"] {
-        if parser.header(key).is_none() {
-            return Err(format!("missing required header {key}"));
-        }
-    }
-    Ok(())
 }
 
 /// Generates the run a trace was played on from its own `run.start`: the

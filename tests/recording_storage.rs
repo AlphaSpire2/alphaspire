@@ -90,7 +90,7 @@ fn scenario(divergent: bool) -> (String, Vec<Record>) {
     let header = script.split_once("\n\n").unwrap().0;
     let header = header
         .lines()
-        .filter(|line| !line.starts_with("[Producer "))
+        .filter(|line| !line.starts_with("[Producer ") && !line.starts_with("[Profile "))
         .collect::<Vec<_>>()
         .join("\n");
     let header = format!(

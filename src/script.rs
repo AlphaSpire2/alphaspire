@@ -72,6 +72,10 @@ impl ScriptWriter {
         let lines = vec![
             "[Format \"STS2PGN\"]".to_owned(),
             "[FormatVersion \"1\"]".to_owned(),
+            format!(
+                "[Profile \"{}\"]",
+                sts2_replay::TraceProfile::Script.as_str()
+            ),
             format!("[Producer \"{PRODUCER}\"]"),
             format!("[Seed \"{seed}\"]"),
             "[Mode \"CUSTOM\"]".to_owned(),

@@ -50,6 +50,52 @@ fn written(name: &str, text: &str) -> PathBuf {
 }
 
 #[test]
+fn profiles_share_validation_and_report_action_only_evidence() {
+    let (_, script) = scripted_run(3);
+    assert!(script.contains("[Profile \"script\"]"));
+    for (name, text) in [
+        ("explicit-profile", script.clone()),
+        (
+            "legacy-profile",
+            script.replace("[Profile \"script\"]\n", ""),
+        ),
+        (
+            "version-two-profile",
+            script.replace("[FormatVersion \"1\"]", "[FormatVersion \"2\"]"),
+        ),
+    ] {
+        let path = written(name, &text);
+        let summary = summarize_trace(&path).unwrap();
+        assert!(!summary.verified);
+        assert_eq!(
+            summary.verification.profile,
+            sts2_replay::TraceProfile::Script
+        );
+        assert_eq!(
+            summary.verification.outcome,
+            sts2_replay::ReplayOutcome::ActionsAccepted
+        );
+        assert_eq!(summary.verification.compared_observations, 0);
+        assert!(summary.verification.warning.is_some());
+        assert!(run_spec(&path).is_ok());
+    }
+    for (name, replacement) in [
+        ("conflicting-profile", "recording"),
+        ("unknown-profile", "unknown"),
+    ] {
+        let path = written(
+            name,
+            &script.replace(
+                "[Profile \"script\"]",
+                &format!("[Profile \"{replacement}\"]"),
+            ),
+        );
+        assert!(summarize_trace(&path).is_err());
+        assert!(run_spec(&path).is_err());
+    }
+}
+
+#[test]
 fn a_script_yields_a_floor_curve_and_act_breakdown_that_follow_its_replay() {
     let (report, script) = scripted_run(400);
     let summary = summarize_trace(&written("curve", &script)).expect("the script summarizes");
@@ -114,9 +160,12 @@ fn a_script_exposes_the_configuration_a_rollout_needs() {
 
 #[test]
 fn a_resumed_trace_is_summarized_through_its_reload() {
-    // The script with a `run.resume` record spliced in after `run.start`,
-    // the records renumbered so the sequence stays consecutive.
+    // A synthetic recording with a resume spliced in after run.start.
+    // Scripts cannot resume; the records stay consecutively numbered.
     let (_, script) = scripted_run(40);
+    let script = script.lines().filter(|line| !line.starts_with("[Producer "))
+        .collect::<Vec<_>>().join("\n")
+        .replace("[Profile \"script\"]", "[Profile \"recording\"]\n[RecorderVersion \"test\"]\n[RunId \"synthetic\"]\n[Mods \"[]\"]\n[Result \"*\"]");
     let is_record = |line: &str| {
         line.split_once(' ')
             .is_some_and(|(head, _)| head.parse::<u64>().is_ok())

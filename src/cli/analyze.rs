@@ -195,7 +195,16 @@ fn nets(args: &AnalyzeArgs, combat_net: &Path) -> alphaspire::analyze::Nets {
 /// What one trace's work is: its analysis, or without a net its summary.
 enum Job {
     Analysis(Box<alphaspire::analyze::Analysis>),
-    Summary(alphaspire::trace_summary::TraceSummary),
+    Summary(Box<alphaspire::trace_summary::TraceSummary>),
+}
+
+impl Job {
+    fn verification(&self) -> Option<&sts2_replay::ReplayVerification> {
+        match self {
+            Self::Analysis(analysis) => analysis.summary.coverage.verification.as_ref(),
+            Self::Summary(summary) => Some(&summary.verification),
+        }
+    }
 }
 
 /// Where a trace's output goes, and what it is called there.
@@ -236,7 +245,7 @@ pub fn command(args: &AnalyzeArgs) -> ! {
                 .map(|analysis| Job::Analysis(Box::new(analysis)))
                 .map_err(|error| error.to_string()),
             None => alphaspire::trace_summary::summarize_trace(trace)
-                .map(Job::Summary)
+                .map(|summary| Job::Summary(Box::new(summary)))
                 .map_err(|error| error.to_string()),
         }
     };
@@ -259,6 +268,14 @@ pub fn command(args: &AnalyzeArgs) -> ! {
                         }
                     };
                     let (directory, stem) = destination(args, trace);
+                    if let Some(verification) = job.verification() {
+                        if let Some(warning) = verification.warning {
+                            eprintln!("alphaspire: {}: {warning}", trace.display());
+                        }
+                        if !verification.succeeded() {
+                            stopped.store(true, Ordering::SeqCst);
+                        }
+                    }
                     let line = match job {
                         Job::Analysis(analysis) => {
                             if let Err(error) = analysis.write(&directory, &stem) {
