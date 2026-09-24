@@ -1,7 +1,6 @@
 //! Fast, network-free summaries of recording and decision-script traces.
 
 use std::collections::BTreeMap;
-use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -71,11 +70,18 @@ pub struct TraceSummary {
     pub acts: Vec<ActSummary>,
 }
 
+fn open_trace(path: &Path) -> Result<sts2_replay::Parser<impl std::io::BufRead>, AnalyzeError> {
+    let file =
+        std::fs::File::open(path).map_err(|error| AnalyzeError::Io(path.to_path_buf(), error))?;
+    let input = sts2_replay::decode_input(file)
+        .map_err(|error| AnalyzeError::Io(path.to_path_buf(), error))?;
+    sts2_replay::Parser::new(input)
+        .map_err(|error| AnalyzeError::Trace(format!("{}: {error}", path.display())))
+}
+
 /// Reads enough of a trace to reproduce its starting world exactly.
 pub fn run_spec(path: &Path) -> Result<RunSpec, AnalyzeError> {
-    let bytes = std::fs::read(path).map_err(|error| AnalyzeError::Io(path.to_path_buf(), error))?;
-    let mut parser = sts2_replay::Parser::new(BufReader::new(std::io::Cursor::new(bytes)))
-        .map_err(|error| AnalyzeError::Trace(format!("{}: {error}", path.display())))?;
+    let mut parser = open_trace(path)?;
     check_compatibility(&parser)
         .map_err(|error| AnalyzeError::Trace(format!("{}: {error}", path.display())))?;
     let seed = parser
@@ -121,9 +127,7 @@ pub fn run_spec(path: &Path) -> Result<RunSpec, AnalyzeError> {
 
 /// Replays a trace once and extracts run-level facts without loading a net.
 pub fn summarize_trace(path: &Path) -> Result<TraceSummary, AnalyzeError> {
-    let bytes = std::fs::read(path).map_err(|error| AnalyzeError::Io(path.to_path_buf(), error))?;
-    let mut parser = sts2_replay::Parser::new(BufReader::new(std::io::Cursor::new(bytes)))
-        .map_err(|error| AnalyzeError::Trace(format!("{}: {error}", path.display())))?;
+    let mut parser = open_trace(path)?;
     check_compatibility(&parser)
         .map_err(|error| AnalyzeError::Trace(format!("{}: {error}", path.display())))?;
     let header = |key: &str| parser.header(key).map(str::to_owned);
@@ -142,11 +146,15 @@ pub fn summarize_trace(path: &Path) -> Result<TraceSummary, AnalyzeError> {
     let mut terminal_token = None;
     for event in &mut parser {
         let event = event.map_err(|error| AnalyzeError::Trace(error.to_string()))?;
+        // Consume through EOF to verify the gzip trailer even after a terminal.
+        if terminal_token.is_some() {
+            return Err(AnalyzeError::Trace("data after terminal result".into()));
+        }
         let record = match event {
             sts2_replay::Event::Record(record) => record,
             sts2_replay::Event::Terminal(token) => {
                 terminal_token = Some(token);
-                break;
+                continue;
             }
         };
         if adapter.is_none() {

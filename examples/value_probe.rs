@@ -23,7 +23,6 @@
     clippy::must_use_candidate
 )]
 
-use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -492,7 +491,8 @@ fn describe(simulator: &Simulator) -> String {
 /// The simulator standing before the record `seq` of `trace` was applied.
 fn state_at(trace: &Path, seq: u64) -> Simulator {
     let file = std::fs::File::open(trace).expect("the trace opens");
-    let mut parser = sts2_replay::Parser::new(BufReader::new(file)).expect("the trace parses");
+    let input = sts2_replay::decode_input(file).expect("the trace input opens");
+    let mut parser = sts2_replay::Parser::new(input).expect("the trace parses");
     let header = |key: &str| parser.header(key).map(str::to_owned);
     let seed = header("Seed").expect("a Seed header");
     let ascension: u8 = header("Ascension")

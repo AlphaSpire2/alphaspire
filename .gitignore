@@ -10,6 +10,7 @@
 /replays/
 /runs/
 *.sts2pgn
+*.sts2pgn.gz
 *.jsonl
 *.onnx
 *.pt

@@ -23,7 +23,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::io::{BufReader, Write as _};
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -638,7 +638,9 @@ pub fn analyze_trace(
         use sha2::Digest as _;
         format!("sha256:{:x}", sha2::Sha256::digest(&bytes))
     };
-    let mut parser = sts2_replay::Parser::new(BufReader::new(std::io::Cursor::new(bytes)))
+    let input = sts2_replay::decode_input(std::io::Cursor::new(bytes))
+        .map_err(|error| AnalyzeError::Io(path.to_path_buf(), error))?;
+    let mut parser = sts2_replay::Parser::new(input)
         .map_err(|error| AnalyzeError::Trace(format!("{}: {error}", path.display())))?;
     check_compatibility(&parser)
         .map_err(|error| AnalyzeError::Trace(format!("{}: {error}", path.display())))?;
@@ -664,11 +666,15 @@ pub fn analyze_trace(
     let mut terminal_token: Option<String> = None;
     for event in &mut parser {
         let event = event.map_err(|error| AnalyzeError::Trace(error.to_string()))?;
+        // Consume through EOF to verify the gzip trailer even after a terminal.
+        if terminal_token.is_some() {
+            return Err(AnalyzeError::Trace("data after terminal result".into()));
+        }
         let record = match event {
             sts2_replay::Event::Record(record) => record,
             sts2_replay::Event::Terminal(token) => {
                 terminal_token = Some(token);
-                break;
+                continue;
             }
         };
         walk.coverage.records += 1;

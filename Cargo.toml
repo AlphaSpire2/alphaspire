@@ -25,6 +25,9 @@ sts2-content = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "b5438e21
 sts2-rng = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d" }
 sts2-replay = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d" }
 
+[dev-dependencies]
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
 # Strip symbols in distribution builds.
 [profile.dist]
 inherits = "release"

@@ -332,7 +332,7 @@ fn a_greedy_rollout_writes_the_script_its_walk_already_recorded() {
 }
 
 #[test]
-fn a_run_can_copy_a_traces_run_configuration() {
+fn a_run_can_copy_a_gzipped_traces_run_configuration() {
     // `--like` reads the seed, character, ascension and the complete unlock
     // projection off a trace — a recording or a decision script — so the
     // copied run opens exactly the game the trace did.
@@ -357,6 +357,14 @@ fn a_run_can_copy_a_traces_run_configuration() {
     ]);
     assert_eq!(code, Some(0), "the trace to copy is written: {message}");
     let trace = out.join("SILENT-QEY5K1P4LY-a3.sts2pgn");
+    let compressed_trace = trace.with_extension("sts2pgn.gz");
+    {
+        use std::io::Write as _;
+        let file = std::fs::File::create(&compressed_trace).unwrap();
+        let mut encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        encoder.write_all(&std::fs::read(&trace).unwrap()).unwrap();
+        encoder.finish().unwrap();
+    }
     let copied = run.parent().unwrap().join("copied");
     let output = Command::new(env!("CARGO_BIN_EXE_alphaspire"))
         .args([
@@ -364,7 +372,7 @@ fn a_run_can_copy_a_traces_run_configuration() {
             "--max-steps",
             "0",
             "--like",
-            trace.to_str().unwrap(),
+            compressed_trace.to_str().unwrap(),
             "--greedy",
             "--resolver",
             "greedy",
