@@ -38,7 +38,7 @@ mod searched;
         .multiple(true)
         .requires("run_net")
         .args([
-            "like", "greedy", "force_smith", "force_smith_random", "force_skip_cards",
+            "like", "greedy", "force_smith", "force_smith_random", "force_relics", "force_skip_cards",
             "force_remove", "force_remove_random", "force_elite", "reward_elite",
             "reward_relic", "reward_gold", "reward_gold_scope", "reward_boss", "explore_rest",
             "explore_map", "emit_ppo", "emit_raw_ppo", "summary", "resolver",
@@ -256,6 +256,11 @@ pub struct RunArgs {
         help_heading = "Play under a run checkpoint"
     )]
     pub force_smith_random: bool,
+    /// Ablation: claim every relic offered on a reward screen, choosing the
+    /// checkpoint's preferred relic if several are offered. Treasure-room
+    /// relics are already mandatory. Only beside --greedy
+    #[arg(long, help_heading = "Play under a run checkpoint")]
+    pub force_relics: bool,
     /// Ablation: from this act (numbered from one) onward, never answer a
     /// card reward's claim — gold, potions, relics and the exit stay the
     /// policy's own play. Only beside --greedy

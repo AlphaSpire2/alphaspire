@@ -918,6 +918,10 @@ impl RolloutPolicy for MacroActor {
 /// there is no log-probability to record and no ratio to form against one.
 /// A rollout refuses `--greedy` beside an emit flag for exactly that reason,
 /// and these lines reach no sink.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent ablation switches, not mutually exclusive states"
+)]
 pub struct MacroGreedy {
     net: Arc<dyn Evaluate>,
     resolver: Box<dyn RolloutPolicy>,
@@ -932,6 +936,8 @@ pub struct MacroGreedy {
     /// of the checkpoint's preferred one. The control that separates the
     /// timing of a smith from the choice of its card.
     random_smith_card: bool,
+    /// Ablation override: claim a relic standing on a reward screen.
+    force_relics: bool,
     /// Ablation override: from this act (numbered from one) onward, a card
     /// reward's claim is never the answer — the screen's other lines and
     /// its exit stay the policy's own choice. See
@@ -979,6 +985,7 @@ impl MacroGreedy {
             degradations: Degradations::default(),
             force_smith: None,
             random_smith_card: false,
+            force_relics: false,
             force_skip_cards: None,
             force_remove: false,
             random_removal_card: false,
@@ -1011,6 +1018,14 @@ impl MacroGreedy {
     #[must_use]
     pub const fn smithing_random_cards(mut self) -> Self {
         self.random_smith_card = true;
+        self
+    }
+
+    /// Claim a relic on a reward screen, choosing the checkpoint's preferred
+    /// relic when several stand there. Treasure-room relics are mandatory.
+    #[must_use]
+    pub const fn forcing_relics(mut self) -> Self {
+        self.force_relics = true;
         self
     }
 
@@ -1086,6 +1101,21 @@ fn smith_plans(plans: &[ActionPlan]) -> Vec<usize> {
 fn best_smith(plans: &[ActionPlan], pi: &[f32]) -> Option<usize> {
     smith_plans(plans)
         .into_iter()
+        .max_by(|left, right| pi[*left].total_cmp(&pi[*right]))
+}
+
+/// The checkpoint's preferred relic claim on a reward screen, if any.
+fn best_relic_claim(plans: &[ActionPlan], pi: &[f32]) -> Option<usize> {
+    plans
+        .iter()
+        .enumerate()
+        .filter(|(_, plan)| {
+            matches!(
+                plan.lead(),
+                Action::ClaimReward { fingerprint, .. } if fingerprint.reward_type == "relic"
+            )
+        })
+        .map(|(index, _)| index)
         .max_by(|left, right| pi[*left].total_cmp(&pi[*right]))
 }
 
@@ -1189,6 +1219,11 @@ impl RolloutPolicy for MacroGreedy {
             forced.unwrap_or(decided.chosen)
         } else {
             decided.chosen
+        };
+        let chosen = if self.force_relics {
+            best_relic_claim(&decided.plans, &decided.pi).unwrap_or(chosen)
+        } else {
+            chosen
         };
         // The deck-discipline ablations, each on its own screen: a shop's
         // removal is bought wherever one stands, and from the named act

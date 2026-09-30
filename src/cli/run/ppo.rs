@@ -54,7 +54,10 @@ fn settle(args: &RunArgs, force_wins: Option<alphaspire::forcewins::ForceWins>) 
     if args.force_smith.is_some() && !args.greedy {
         die("--force-smith is an ablation over deployed play: pass --greedy with it");
     }
-    if (args.force_skip_cards.is_some() || args.force_remove || args.force_elite.is_some())
+    if (args.force_relics
+        || args.force_skip_cards.is_some()
+        || args.force_remove
+        || args.force_elite.is_some())
         && !args.greedy
     {
         die("the forcings are ablations over deployed play: pass --greedy with them");
@@ -213,6 +216,9 @@ pub fn command(args: &RunArgs, force_wins: Option<alphaspire::forcewins::ForceWi
                 if args.force_smith_random {
                     greedy = greedy.smithing_random_cards();
                 }
+            }
+            if args.force_relics {
+                greedy = greedy.forcing_relics();
             }
             if let Some(act) = args.force_skip_cards {
                 greedy = greedy.forcing_card_skips(act);
