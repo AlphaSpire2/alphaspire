@@ -1,7 +1,7 @@
 [package]
 name = "alphaspire"
 description = "Search and self-play companion to sts2sim: coverage fuzzing and belief analysis"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.88"
 license = "AGPL-3.0-or-later"
@@ -24,6 +24,9 @@ sts2-engine = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "b5438e218
 sts2-content = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d" }
 sts2-rng = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d" }
 sts2-replay = { git = "https://github.com/AlphaSpire2/sts2sim", rev = "b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d" }
+
+[build-dependencies]
+serde_json = "1.0"
 
 [dev-dependencies]
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

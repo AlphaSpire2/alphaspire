@@ -12,6 +12,13 @@ is more useful than a complete training run.
 
 ## Development
 
+Every meaningful change includes a version bump in `Cargo.toml` and the matching
+`Cargo.lock` package entry. Adopting a new simulator dependency revision also
+requires an Alphaspire bump, usually a patch unless the resulting feature or
+compatibility changes warrant a larger bump. A simulator minor bump does not
+automatically require an Alphaspire minor bump. Rebuilding unchanged sources
+does not require another bump.
+
 Use Rust 1.88 or newer. Configure Git authentication for the private dependency
 outside this repository; never put credentials in Cargo files or Git URLs.
 Cargo can use an existing Git credential setup with
@@ -23,6 +30,12 @@ The local config is ignored. Release verification must use the pinned Git
 dependency without this override; do not commit a lockfile regenerated with
 local simulator paths. Local overrides may require omitting `--locked` while
 developing; restore the committed lockfile before preparing a pull request.
+
+Build-time provenance queries Cargo metadata offline using Cargo configuration
+files and the environment. Put dependency patches in `.cargo/config.toml`
+instead of passing them only through `--config`, so this query sees the same
+dependency selection as the build. Provenance is refreshed on every build to
+detect source changes even when Git's HEAD and index are unchanged.
 
 Before submitting a code change, run these checks with simulator access:
 

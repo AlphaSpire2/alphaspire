@@ -181,6 +181,7 @@ jobs:
         env:
           BUILD_PLATFORM: ${{ matrix.platform }}
           BINARY_EXTENSION: ${{ matrix.extension }}
+          SIMULATOR_REVISION: ${{ steps.simulator.outputs.revision }}
         run: |
           $name = "alphaspire-$env:RELEASE_TAG-$env:BUILD_PLATFORM"
           $package = (Resolve-Path "../packages/$name").Path
@@ -189,8 +190,13 @@ jobs:
             chmod +x $executable
             if ($LASTEXITCODE -ne 0) { throw 'Cannot set executable permissions' }
           }
-          $version = & $executable --version
-          if ($LASTEXITCODE -ne 0 -or $version -ne "alphaspire $($env:RELEASE_TAG.Substring(1))") {
+          $version = @(& $executable --version)
+          if ($LASTEXITCODE -ne 0) { throw 'Executable version command failed' }
+          $revision = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read source revision' }
+          if ($version.Count -ne 2 -or $version[0] -ne "alphaspire $($env:RELEASE_TAG.Substring(1)) ($revision)" -or
+              $version[1] -notmatch '^sts2sim [0-9]+\.[0-9]+\.[0-9]+[^ ]* \([0-9a-f]{40}\)$' -or
+              -not $version[1].EndsWith("($env:SIMULATOR_REVISION)")) {
             throw "Unexpected executable version: $version"
           }
           $scripts = Join-Path $env:RUNNER_TEMP "alphaspire-smoke-$([guid]::NewGuid())"

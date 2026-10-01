@@ -11,7 +11,7 @@ mod cli;
 #[derive(Parser)]
 #[command(
     name = "alphaspire",
-    version,
+    version = include_str!(concat!(env!("OUT_DIR"), "/version.txt")),
     about = "Search and self-play companion to sts2sim"
 )]
 struct Cli {

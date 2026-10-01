@@ -1,6 +1,30 @@
 use std::process::Command;
 
 #[test]
+fn version_reports_both_projects_without_needing_source_at_runtime() {
+    for flag in ["--version", "-V"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_alphaspire"))
+            .arg(flag)
+            .current_dir(std::env::temp_dir())
+            .env("PATH", "")
+            .output()
+            .expect("alphaspire runs without Git");
+        assert!(output.status.success());
+        assert!(output.stderr.is_empty());
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let lines: Vec<_> = stdout.lines().collect();
+        assert_eq!(lines.len(), 2, "{stdout}");
+        assert!(lines[0].starts_with(concat!("alphaspire ", env!("CARGO_PKG_VERSION"), " (")));
+        assert!(lines[1].starts_with("sts2sim "));
+        assert!(
+            lines
+                .iter()
+                .all(|line| line.contains(" (") && line.ends_with(')'))
+        );
+    }
+}
+
+#[test]
 fn completions_prints_a_bash_completion_script() {
     let output = Command::new(env!("CARGO_BIN_EXE_alphaspire"))
         .args(["completions", "bash"])
