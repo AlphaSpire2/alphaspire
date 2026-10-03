@@ -135,7 +135,7 @@ fn a_checkpoint_that_names_no_character_reads_as_saying_nothing() {
     // loads, and it warns about nobody: absent is "does not say", not
     // "trained on nothing".
     let net = fixture();
-    assert!(net.characters().is_empty());
+    assert_eq!(net.characters(), [] as [String; 0]);
     for name in ["CHARACTER.IRONCLAD", "CHARACTER.SILENT"] {
         assert!(net.foreign_to(&name.parse().unwrap()).is_none());
     }

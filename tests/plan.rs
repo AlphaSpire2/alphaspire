@@ -968,11 +968,13 @@ fn the_throw_that_starts_a_fight_is_not_a_freeing_step() {
 /// longer offers is an action the engine refuses.
 #[test]
 fn every_trade_is_steppable_in_order() {
-    for simulator in [
+    for simulator in vec![
         potion_reward_at_the_fake_merchant(),
         potion_reward(2, &[THROWN, DRUNK]),
         potion_reward(1, &[DRUNK]),
-    ] {
+    ]
+    .into_boxed_slice()
+    {
         for plan in permitted_plans(&simulator) {
             let ActionPlan::Trade { free, take } = &plan else {
                 continue;

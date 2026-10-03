@@ -461,7 +461,6 @@ pub fn command(args: &RunArgs) -> ! {
     let force_wins = args.force_wins();
     if args.run_net.is_some() {
         ppo::command(args, force_wins)
-    } else {
-        searched::command(args, force_wins.as_ref())
     }
+    searched::command(args, force_wins.as_ref())
 }

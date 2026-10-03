@@ -31,7 +31,7 @@ dependencies = [
 
 [[package]]
 name = "alphaspire"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "clap",
  "clap_complete",
@@ -1113,8 +1113,8 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "sts2-content"
-version = "0.1.0"
-source = "git+https://github.com/AlphaSpire2/sts2sim?rev=b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d#b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d"
+version = "0.3.0"
+source = "git+https://github.com/AlphaSpire2/sts2sim?rev=344dc9e6b28b60159fe8848c0f8ff1b943716697#344dc9e6b28b60159fe8848c0f8ff1b943716697"
 dependencies = [
  "sts2-core",
  "sts2-engine",
@@ -1123,8 +1123,8 @@ dependencies = [
 
 [[package]]
 name = "sts2-core"
-version = "0.1.0"
-source = "git+https://github.com/AlphaSpire2/sts2sim?rev=b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d#b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d"
+version = "0.3.0"
+source = "git+https://github.com/AlphaSpire2/sts2sim?rev=344dc9e6b28b60159fe8848c0f8ff1b943716697#344dc9e6b28b60159fe8848c0f8ff1b943716697"
 dependencies = [
  "serde",
  "serde_json",
@@ -1132,8 +1132,8 @@ dependencies = [
 
 [[package]]
 name = "sts2-engine"
-version = "0.1.0"
-source = "git+https://github.com/AlphaSpire2/sts2sim?rev=b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d#b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d"
+version = "0.3.0"
+source = "git+https://github.com/AlphaSpire2/sts2sim?rev=344dc9e6b28b60159fe8848c0f8ff1b943716697#344dc9e6b28b60159fe8848c0f8ff1b943716697"
 dependencies = [
  "serde",
  "serde_json",
@@ -1144,9 +1144,10 @@ dependencies = [
 
 [[package]]
 name = "sts2-replay"
-version = "0.1.0"
-source = "git+https://github.com/AlphaSpire2/sts2sim?rev=b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d#b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d"
+version = "0.3.0"
+source = "git+https://github.com/AlphaSpire2/sts2sim?rev=344dc9e6b28b60159fe8848c0f8ff1b943716697#344dc9e6b28b60159fe8848c0f8ff1b943716697"
 dependencies = [
+ "flate2",
  "serde",
  "serde_json",
  "sha2",
@@ -1157,8 +1158,8 @@ dependencies = [
 
 [[package]]
 name = "sts2-rng"
-version = "0.1.0"
-source = "git+https://github.com/AlphaSpire2/sts2sim?rev=b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d#b5438e2180d82fee5e9d626abc0e1c6afdaa6d3d"
+version = "0.3.0"
+source = "git+https://github.com/AlphaSpire2/sts2sim?rev=344dc9e6b28b60159fe8848c0f8ff1b943716697#344dc9e6b28b60159fe8848c0f8ff1b943716697"
 dependencies = [
  "serde",
 ]

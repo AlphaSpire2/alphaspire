@@ -62,7 +62,7 @@ fn every_character_the_registry_names_can_start_a_run() {
     let preset = UnlockPresetManifest::pinned().unwrap();
     let registry = sts2_content::standard_registry();
     let characters = registry.registered_character_ids();
-    assert!(!characters.is_empty());
+    assert_ne!(characters, [] as [sts2_core::ModelId; 0]);
     for character in characters {
         assert_eq!(character.category(), "CHARACTER", "{character}");
         sts2_content::standard_run_on_preset_at("NLD6VZXP94", &character, &preset, 0)

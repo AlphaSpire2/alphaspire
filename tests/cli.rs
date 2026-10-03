@@ -10,7 +10,7 @@ fn version_reports_both_projects_without_needing_source_at_runtime() {
             .output()
             .expect("alphaspire runs without Git");
         assert!(output.status.success());
-        assert!(output.stderr.is_empty());
+        assert_eq!(output.stderr, [] as [u8; 0]);
         let stdout = String::from_utf8(output.stdout).unwrap();
         let lines: Vec<_> = stdout.lines().collect();
         assert_eq!(lines.len(), 2, "{stdout}");

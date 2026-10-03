@@ -189,7 +189,7 @@ fn a_script_walks_to_its_end_and_every_decision_is_a_line() {
             );
             assert!(line.shallow.is_none(), "net-only searches nothing");
         }
-        assert!(!line.played_display.is_empty());
+        assert_ne!(line.played_display, "");
     }
     assert!(!summary.fights.is_empty(), "the walk fought");
     assert!(

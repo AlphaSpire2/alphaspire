@@ -17,8 +17,10 @@ Running a packaged release does not require Rust or a simulator checkout.
 
 ## Contributing
 
-Currently the best way to contribute is to submit your sts2pgn replays
-to [alphaspire.dev](https://alphaspire.dev/)
+The best ways to contribute are to
+[open an issue](https://github.com/AlphaSpire2/alphaspire/issues) with a bug report
+or suggestion, and submit your sts2pgn replays to
+[alphaspire.dev](https://alphaspire.dev/).
 
 ## Usage
 
